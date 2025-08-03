@@ -1,3 +1,15 @@
+use chrono::Datelike;
+use std::{collections::HashMap, sync::Mutex};
+
+use typst::{
+    Library, World,
+    diag::{FileError, FileResult, Warned},
+    foundations::{Bytes, Datetime},
+    layout::PagedDocument,
+    syntax::{FileId, Source, VirtualPath},
+    text::{Font, FontBook},
+    utils::LazyHash,
+};
 use ui_helpers::{append_new_button, append_new_div};
 use web_sys::window;
 
@@ -60,6 +72,129 @@ impl Action {
             Self::PrevPage => 'p',
             Self::Help => 'h',
         }
+    }
+}
+
+enum File {
+    Typst(Source),
+    // todo add other types
+}
+
+struct Fonts {
+    pub meta: LazyHash<FontBook>,
+    pub data: Vec<Font>,
+}
+
+pub struct GraphWorld {
+    files: Mutex<HashMap<FileId, File>>,
+    root_note_id: FileId,
+    fonts: Fonts,
+    typst_std_lib: LazyHash<Library>,
+}
+
+impl GraphWorld {
+    pub fn new() -> Self {
+        let fonts = Self::get_default_fonts();
+        let root_note_id = FileId::new(None, VirtualPath::new("/root.typ"));
+        let files = Mutex::new(HashMap::from([(
+            root_note_id,
+            File::Typst(Source::new(root_note_id, "Hello world.".to_string())),
+        )]));
+
+        Self {
+            files,
+            root_note_id,
+            fonts,
+            typst_std_lib: LazyHash::new(Library::default()), // stdlib
+        }
+    }
+
+    pub fn replace_file(&mut self, id: FileId, content: &str) {
+        let mut files = self.files.lock().unwrap();
+
+        match files.get_mut(&id).unwrap() {
+            File::Typst(source) => source.replace(content),
+        };
+    }
+
+    pub fn compile_to_svg(&self, page_idx: usize) -> Result<String, String> {
+        let Warned { output, warnings } = typst::compile::<PagedDocument>(&self);
+        let document = match output {
+            Ok(doc) => doc,
+            Err(why) => return Err(format!("{:?}", why)),
+        };
+
+        match document.pages.get(page_idx) {
+            Some(page) => Ok(typst_svg::svg(page)),
+            None => match document.pages.last() {
+                Some(page) => Ok(typst_svg::svg(page)),
+                None => Err(format!("The file has no pages somehow")),
+            },
+        }
+    }
+
+    // from obsidian-typst
+    fn get_default_fonts() -> Fonts {
+        let mut meta = FontBook::new();
+        let mut data = Vec::new();
+
+        for bytes in typst_assets::fonts() {
+            let buffer = Bytes::new(bytes);
+            for font in Font::iter(buffer) {
+                meta.push(font.info().clone());
+                data.push(font);
+            }
+        }
+
+        return Fonts {
+            meta: meta.into(),
+            data,
+        };
+    }
+}
+
+impl World for GraphWorld {
+    fn library(&self) -> &LazyHash<Library> {
+        &self.typst_std_lib
+    }
+
+    fn book(&self) -> &LazyHash<FontBook> {
+        &self.fonts.meta
+    }
+
+    fn main(&self) -> FileId {
+        self.root_note_id
+    }
+
+    fn source(&self, id: FileId) -> FileResult<Source> {
+        let files = self.files.lock().map_err(|_| FileError::AccessDenied)?;
+
+        match files.get(&id).ok_or(FileError::AccessDenied)? {
+            File::Typst(source) => Ok(source.clone()),
+        }
+    }
+
+    fn file(&self, _id: FileId) -> FileResult<Bytes> {
+        todo!("Binary files are not implemented yet")
+    }
+
+    fn font(&self, index: usize) -> Option<typst::text::Font> {
+        Some(self.fonts.data[index].clone())
+    }
+
+    fn today(&self, offset: Option<i64>) -> Option<typst::foundations::Datetime> {
+        let now = chrono::Local::now();
+
+        let naive = match offset {
+            None => now.naive_local(),
+            Some(o) => now.naive_utc() + chrono::Duration::hours(o),
+        };
+
+        Datetime::from_ymd(
+            naive.year(),
+            naive.month().try_into().ok()?,
+            naive.day().try_into().ok()?,
+        )
     }
 }
 

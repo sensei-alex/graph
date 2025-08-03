@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+chrono = "0.4.41"
+typst = "0.13.1"
+typst-assets = { version = "0.13.1", features = ["fonts"] }
+typst-svg = "0.13.1"
 wasm-bindgen = "0.2.100"
 web-sys = { version = "0.3.77", features = [
   "console",
