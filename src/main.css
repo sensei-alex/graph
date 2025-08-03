@@ -1,0 +1,95 @@
+:root {
+  --base: #1e1e2e;
+  --mantle: #181825;
+  --crust: #11111b;
+  --text: #cdd6f4;
+  --subtext0: #a6adc8;
+  --accent: #b4befe;
+  --link: #94e2d5;
+  --border: 2px solid var(--crust);
+  --radius: 0.5rem;
+  --pad: 1rem;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  border: none;
+}
+
+.root {
+  display: grid;
+  height: 100vh;
+  grid-template-columns: 100fr 162fr;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    "graph tb-pg"
+    "graph page"
+    "graph tb-dc";
+  color: var(--text);
+  background: var(--crust);
+  gap: 2px;
+  font-family: monospace;
+  font-size: 16px;
+}
+
+.graph {
+  grid-area: graph;
+  background: var(--base);
+}
+
+.button {
+  height: 4rem;
+  aspect-ratio: 1;
+  position: relative;
+  display: grid;
+  place-content: center;
+  border: var(--border);
+  background: var(--base);
+  border-radius: var(--radius);
+  transition: ease-in-out 0.2s;
+}
+
+.button:hover {
+  transform: scale(0.95);
+  cursor: pointer;
+}
+
+.button__hotkey {
+  position: absolute;
+  bottom: 0.3rem;
+  right: 0.3rem;
+  color: var(--subtext0);
+  text-transform: uppercase;
+  font-size: 0.62rem;
+}
+
+.toolbar {
+  display: flex;
+  padding: var(--pad);
+  gap: var(--pad);
+}
+
+.toolbar--page {
+  grid-aria: tb-pg;
+  background: var(--mantle);
+}
+
+.toolbar--doc {
+  grid-area: tb-dc;
+  background: var(--mantle);
+}
+
+.toolbar__spacer {
+  width: 100%;
+}
+
+.page {
+  grid-area: page;
+  background: var(--crust);
+}
