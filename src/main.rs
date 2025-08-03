@@ -1,5 +1,5 @@
-use std::sync::mpsc::{Receiver, Sender, channel};
-use web_sys::{Document, Element, window};
+use ui_helpers::{append_new_button, append_new_div};
+use web_sys::window;
 
 fn main() {
     println!("todo setup panic hook!");
@@ -19,25 +19,6 @@ fn main() {
     let _ = append_new_div(&document, &doc_toolbar, "toolbar__spacer");
     let button_prev = append_new_button(&document, &doc_toolbar, Action::PrevPage);
     let button_next = append_new_button(&document, &doc_toolbar, Action::NextPage);
-}
-
-/// - Creates a new `div` element
-/// - Appends it to `parent`
-/// - Assigns it the `class`
-/// - Gives you the ownership
-///
-/// ## Panics
-/// - if `document.create_element` fails
-/// - if `parent.append_child` fails
-fn append_new_div(document: &Document, parent: &Element, class: &str) -> Element {
-    let div = document
-        .create_element("div")
-        .expect("Can't create a DOM element");
-    div.set_class_name(class);
-    parent
-        .append_child(&div)
-        .expect("Can't append a DOM element");
-    div
 }
 
 #[derive(Clone, Copy)]
@@ -82,25 +63,57 @@ impl Action {
     }
 }
 
-fn append_new_button(document: &Document, parent: &Element, action: Action) -> Element {
-    let button = document
-        .create_element("button")
-        .expect("Can't create a button in the DOM");
-    button.set_class_name("button");
-    button.set_inner_html(action.to_icon().to_svg());
+mod ui_helpers {
+    use crate::Action;
+    use web_sys::{Document, Element};
 
-    let hotkey = action.to_hotkey().to_string();
-    let hotkey_element = document
-        .create_element("span")
-        .expect("Can't create a span in the DOM");
-    hotkey_element.set_class_name("button__hotkey");
-    hotkey_element.set_text_content(Some(&hotkey));
-    button
-        .append_child(&hotkey_element)
-        .expect("Can't append a DOM element");
+    /// - Creates a new `div` element
+    /// - Appends it to `parent`
+    /// - Assigns it the `class`
+    /// - Gives you the ownership
+    ///
+    /// ## Panics
+    /// - if `document.create_element` fails
+    /// - if `parent.append_child` fails
+    pub fn append_new_div(document: &Document, parent: &Element, class: &str) -> Element {
+        let div = document
+            .create_element("div")
+            .expect("Can't create a DOM element");
+        div.set_class_name(class);
+        parent
+            .append_child(&div)
+            .expect("Can't append a DOM element");
+        div
+    }
 
-    parent
-        .append_child(&button)
-        .expect("Can't append a DOM element");
-    button
+    /// - Creates a new `div` element
+    /// - Appends it to `parent`
+    /// - Assigns it the `class`
+    /// - Gives you the ownership
+    ///
+    /// ## Panics
+    /// - if `document.create_element` fails
+    /// - if `parent.append_child` fails
+    pub fn append_new_button(document: &Document, parent: &Element, action: Action) -> Element {
+        let button = document
+            .create_element("button")
+            .expect("Can't create a button in the DOM");
+        button.set_class_name("button");
+        button.set_inner_html(action.to_icon().to_svg());
+
+        let hotkey = action.to_hotkey().to_string();
+        let hotkey_element = document
+            .create_element("span")
+            .expect("Can't create a span in the DOM");
+        hotkey_element.set_class_name("button__hotkey");
+        hotkey_element.set_text_content(Some(&hotkey));
+        button
+            .append_child(&hotkey_element)
+            .expect("Can't append a DOM element");
+
+        parent
+            .append_child(&button)
+            .expect("Can't append a DOM element");
+        button
+    }
 }
