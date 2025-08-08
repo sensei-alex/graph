@@ -23,7 +23,7 @@
       size: 16pt,
       weight: "bold",
       font: "jetbrains mono",
-      fill: if active { theme.active.text } else { luma(0%) },
+      fill: if active { theme.active.text } else { theme.text },
       content,
     ),
   ),
@@ -33,7 +33,7 @@
   active: active,
   circle(
     radius: theme.icon_size / 2,
-    stroke: theme.icon_stroke + if active { theme.active.text } else { luma(0%) },
+    stroke: theme.icon_stroke + if active { theme.active.text } else { theme.text },
   ),
 )
 
@@ -41,7 +41,7 @@
   active: active,
   square(
     size: theme.icon_size, 
-    stroke: theme.icon_stroke + if active { theme.active.text } else { luma(0%) },
+    stroke: theme.icon_stroke + if active { theme.active.text } else { theme.text },
   ),
 )
 
@@ -50,7 +50,7 @@
   polygon.regular(
     size: theme.icon_size, 
     vertices: 6,
-    stroke: theme.icon_stroke + if active { theme.active.text } else { luma(0%) },
+    stroke: theme.icon_stroke + if active { theme.active.text } else { theme.text },
   ),
 )
 
@@ -59,12 +59,12 @@
   square(
     size: theme.icon_size,
     inset: 0pt,
-    stroke: theme.icon_stroke + if active { theme.active.text } else { luma(0%) },
+    stroke: theme.icon_stroke + if active { theme.active.text } else { theme.text },
   )[
     #place(
       bottom + right,
       polygon(
-        stroke: theme.icon_stroke + if active { theme.active.text } else { luma(0%) },
+        stroke: theme.icon_stroke + if active { theme.active.text } else { theme.text },
         (25%, 100%),
         (100%, 100%),
         (100%, 75%),
@@ -76,14 +76,14 @@
       dx: 15%,
       dy: 15%,
       circle(
-        stroke: theme.icon_stroke + if active { theme.active.text } else { luma(0%) },
+        stroke: theme.icon_stroke + if active { theme.active.text } else { theme.text },
         radius: theme.icon_size / 8,
       ),
     )
   ],
 )
 
-#let ui_line(..content) = context {
+#let ui_row(..content) = context {
   let is_portrait = page.width / page.height < 1
   let width = if is_portrait { page.height } else { page.width }
   let height = if is_portrait { page.width } else { page.height }
@@ -106,6 +106,31 @@
   )
 }
 
+#let menu_line(active: false, content) = rect(
+  stroke: theme.crust + theme.gap,
+  fill: if active { theme.active.base } else { theme.base },
+  inset: 1em,
+  width: 100%,
+  align(
+    horizon,
+    text(
+      size: 16pt,
+      weight: "bold",
+      font: "jetbrains mono",
+      fill: if active { theme.active.text } else { theme.text },
+      content,
+    ),
+  ),
+)
+
+#let menu(..args) = rect(
+  width: 100%,
+  fill: theme.base,
+  stroke: theme.crust + theme.gap,
+  inset: 0pt,
+  grid( ..args ),
+)
+
 // Variables set by rust
 #let page_format = "16x9"
 
@@ -117,7 +142,7 @@
 
 // ------------ >8 ------------
 
-#ui_line(
+#ui_row(
   button(active: true)[<<<], // this is a mock of what can be set by rust
   button[#page_format],
   button[>>>],
@@ -127,10 +152,25 @@
 
 // the top toolbar
 
-#ui_line(
-  button_circle(active: true),
-  button_rect(),
-  button_polygon(),
-  button_image(),
+#ui_row(
+  [#button_circle(active: true) <action_circle>],
+  [#button_rect() <action_rect>],
+  [#button_polygon() <action_polygon>],
+  [#button_image() <action_image>],
 )
 
+#pagebreak()
+
+#set page(
+  width: 10cm,
+  height: 15cm,
+)
+
+#menu(
+  menu_line(active: true)[search notes],
+  menu_line[code],
+  menu_line[import],
+  menu_line[export],
+  menu_line[shortcuts],
+  menu_line[language],
+)
