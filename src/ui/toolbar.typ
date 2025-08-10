@@ -1,5 +1,3 @@
-#import "theme.typ": theme
-
 #let button(active: false, content) = rect(
   width: 100%,
   height: 100%,

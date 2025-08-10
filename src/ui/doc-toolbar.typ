@@ -1,4 +1,3 @@
-#import "theme.typ": theme
 #import "toolbar.typ": button, toolbar
 
 #let current_page = "1 / 16"

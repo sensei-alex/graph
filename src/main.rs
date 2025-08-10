@@ -1,5 +1,5 @@
 use chrono::Datelike;
-use log::{error, info};
+use log::{error, info, warn};
 use std::{collections::HashMap, ops::Range, panic, sync::Mutex};
 
 use typst::{
@@ -11,7 +11,7 @@ use typst::{
     text::{Font, FontBook},
     utils::LazyHash,
 };
-use ui_helpers::{append_new_button, append_new_div};
+use ui_helpers::append_new_div;
 use web_sys::window;
 
 fn main() {
@@ -29,13 +29,9 @@ fn main() {
     let doc_toolbar = append_new_div(&document, &root, "toolbar toolbar--doc");
     let page_container = append_new_div(&document, &root, "page");
 
-    let button_help = append_new_button(&document, &doc_toolbar, Action::Help);
-    let _ = append_new_div(&document, &doc_toolbar, "toolbar__spacer");
-    let button_prev = append_new_button(&document, &doc_toolbar, Action::PrevPage);
-    let button_next = append_new_button(&document, &doc_toolbar, Action::NextPage);
-
-    let app = GraphWorld::new();
-    root.set_inner_html(&app.render_to_svg().unwrap());
+    let app = App::new();
+    page_container.set_inner_html(&app.open_file(app.readme).unwrap().render());
+    doc_toolbar.set_inner_html(&app.open_file(app.doc_toolbar).unwrap().render());
 }
 
 #[derive(Clone, Copy)]
@@ -80,6 +76,7 @@ impl Action {
     }
 }
 
+#[derive(Debug)]
 enum File {
     Typst(Source),
     // todo add other types
@@ -94,29 +91,33 @@ impl GraphSource for Source {
         let mut note = self.clone();
 
         note.edit(Range { start: 0, end: 0 }, text);
+        info!("{:#?}", &note.text());
         note
     }
 }
 
+#[derive(Debug)]
 struct Fonts {
     pub meta: LazyHash<FontBook>,
     pub data: Vec<Font>,
 }
 
-pub struct GraphWorld {
+#[derive(Debug)]
+pub struct App {
     files: Mutex<HashMap<FileId, File>>,
-    /// The file currently on the screen
-    current_buffer: GraphBuffer,
     /// The file that gets implicitly imported in all other files (intended for theming)
-    global_context: FileId,
+    pub readme: FileId,
+    pub global_context: FileId,
+    pub doc_toolbar: FileId,
     fonts: Fonts,
     typst_std_lib: LazyHash<Library>,
 }
 
 #[derive(Debug)]
-pub struct GraphBuffer {
+pub struct Buffer<'a> {
+    note: FileId,
     page: usize,
-    note_id: FileId,
+    store: &'a App,
 }
 
 trait FromPath {
@@ -129,24 +130,26 @@ impl FromPath for FileId {
     }
 }
 
-impl GraphWorld {
+impl App {
     pub fn new() -> Self {
         let fonts = Self::get_default_fonts();
-        let current_note = FileId::from_path("/README.typ");
-        let files = Mutex::new(HashMap::from([(
-            current_note,
-            File::Typst(Source::new(current_note, "Hello world.".to_string())),
-        )]));
+        let readme = FileId::from_path("/readme.typ");
+        let global_context = FileId::from_path("/global ctx.typ");
+        let toolbar_utils = FileId::from_path("/toolbar.typ");
+        let doc_toolbar = FileId::from_path("/doc toolbar.typ");
 
-        let current_buffer = GraphBuffer {
-            page: 0,
-            note_id: current_note,
-        };
+        let files = Mutex::new(HashMap::from([
+            Self::file_with_default_content(readme, "Hello, world!"),
+            Self::file_with_default_content(global_context, include_str!("./ui/global-ctx.typ")),
+            Self::file_with_default_content(toolbar_utils, include_str!("./ui/toolbar.typ")),
+            Self::file_with_default_content(doc_toolbar, include_str!("./ui/doc-toolbar.typ")),
+        ]));
 
         Self {
             files,
-            current_buffer, // TODO restore from localstorage
-            global_context: FileId::from_path("/GLOBAL.typ"),
+            readme,
+            global_context,
+            doc_toolbar,
             fonts,
             typst_std_lib: LazyHash::new(Library::default()), // stdlib
         }
@@ -160,27 +163,6 @@ impl GraphWorld {
         };
     }
 
-    /// Renders a page to SVG
-    pub fn render_to_svg(&self) -> Result<String, String> {
-        info!("rendering");
-        let Warned { output, warnings } = typst::compile::<PagedDocument>(&self);
-        let document = match output {
-            Ok(doc) => doc,
-            Err(why) => return Err(format!("{:?}", why)),
-        };
-
-        match document.pages.get(self.current_buffer.page) {
-            Some(page) => Ok(typst_svg::svg(page)),
-            None => {
-                error!(
-                    "Invalid buffer {:?}: page ID out of range",
-                    &self.current_buffer
-                );
-                Err("Invalid buffer: page ID out of range".to_string())
-            }
-        }
-    }
-
     pub fn list_files(&self) -> Vec<FileId> {
         self.files
             .lock()
@@ -191,16 +173,15 @@ impl GraphWorld {
             .collect()
     }
 
-    pub fn open_file(&mut self, id: FileId) -> Result<(), FileError> {
+    pub fn open_file(&self, id: FileId) -> Result<Buffer, FileError> {
         let files = self.files.lock().map_err(|_| FileError::AccessDenied)?;
 
         if files.contains_key(&id) {
-            self.current_buffer = GraphBuffer {
-                note_id: id,
+            Ok(Buffer {
+                note: id,
                 page: 0,
-            };
-
-            Ok(())
+                store: self,
+            })
         } else {
             Err(FileError::AccessDenied)
         }
@@ -224,32 +205,63 @@ impl GraphWorld {
             data,
         };
     }
+
+    fn file_with_default_content(id: FileId, text: &str) -> (FileId, File) {
+        (id, File::Typst(Source::new(id, text.to_string())))
+    }
 }
 
-impl World for GraphWorld {
+impl Buffer<'_> {
+    /// Renders a page to SVG
+    pub fn render(&self) -> String {
+        info!("rendering the buffer");
+        let Warned { output, warnings } = typst::compile::<PagedDocument>(&self);
+
+        warn!("{:#?}", warnings);
+
+        let document = match output {
+            Ok(doc) => doc,
+            Err(why) => return format!("<div class='error'>{:?}</div>", why),
+        };
+
+        match document.pages.get(self.page) {
+            Some(page) => typst_svg::svg(page),
+            None => {
+                format!("Invalid buffer {:?}: page ID out of range", &self)
+            }
+        }
+    }
+}
+
+impl World for Buffer<'_> {
     fn library(&self) -> &LazyHash<Library> {
-        &self.typst_std_lib
+        &self.store.typst_std_lib
     }
 
     fn book(&self) -> &LazyHash<FontBook> {
-        &self.fonts.meta
+        &self.store.fonts.meta
     }
 
     fn main(&self) -> FileId {
-        self.current_buffer.note_id
+        self.note
     }
 
     fn source(&self, id: FileId) -> FileResult<Source> {
-        let files = self.files.lock().map_err(|_| FileError::AccessDenied)?;
+        let files = self
+            .store
+            .files
+            .lock()
+            .map_err(|_| FileError::AccessDenied)?;
 
-        let global_context = match files.get(&self.global_context) {
+        let global_context = match files.get(&self.store.global_context) {
             Some(file) => match file {
                 File::Typst(source) => format!("{}\n", source.text()),
             },
-            None => String::new(),
+            None => String::from("Where'd it go?"),
         };
 
         info!("Reading {:?}", &id);
+        info!("Context {:?}", &global_context);
 
         match files.get(&id).ok_or(FileError::AccessDenied)? {
             File::Typst(source) => Ok(source.concat(&global_context)),
@@ -261,7 +273,7 @@ impl World for GraphWorld {
     }
 
     fn font(&self, index: usize) -> Option<typst::text::Font> {
-        Some(self.fonts.data[index].clone())
+        Some(self.store.fonts.data[index].clone())
     }
 
     fn today(&self, offset: Option<i64>) -> Option<typst::foundations::Datetime> {
@@ -301,36 +313,5 @@ mod ui_helpers {
             .append_child(&div)
             .expect("Can't append a DOM element");
         div
-    }
-
-    /// - Creates a new `div` element
-    /// - Appends it to `parent`
-    /// - Assigns it the `class`
-    /// - Gives you the ownership
-    ///
-    /// ## Panics
-    /// - if `document.create_element` fails
-    /// - if `parent.append_child` fails
-    pub fn append_new_button(document: &Document, parent: &Element, action: Action) -> Element {
-        let button = document
-            .create_element("button")
-            .expect("Can't create a button in the DOM");
-        button.set_class_name("button");
-        button.set_inner_html(action.to_icon().to_svg());
-
-        let hotkey = action.to_hotkey().to_string();
-        let hotkey_element = document
-            .create_element("span")
-            .expect("Can't create a span in the DOM");
-        hotkey_element.set_class_name("button__hotkey");
-        hotkey_element.set_text_content(Some(&hotkey));
-        button
-            .append_child(&hotkey_element)
-            .expect("Can't append a DOM element");
-
-        parent
-            .append_child(&button)
-            .expect("Can't append a DOM element");
-        button
     }
 }
