@@ -5,6 +5,9 @@ edition = "2024"
 
 [dependencies]
 chrono = "0.4.41"
+console_error_panic_hook = "0.1.7"
+console_log = { version = "1.0.0", features = ["color"] }
+log = "0.4.27"
 typst = "0.13.1"
 typst-assets = { version = "0.13.1", features = ["fonts"] }
 typst-svg = "0.13.1"

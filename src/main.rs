@@ -1,5 +1,6 @@
 use chrono::Datelike;
-use std::{collections::HashMap, sync::Mutex};
+use log::{error, info};
+use std::{collections::HashMap, ops::Range, panic, sync::Mutex};
 
 use typst::{
     Library, World,
@@ -14,7 +15,8 @@ use ui_helpers::{append_new_button, append_new_div};
 use web_sys::window;
 
 fn main() {
-    println!("todo setup panic hook!");
+    panic::set_hook(Box::new(console_error_panic_hook::hook));
+    console_log::init_with_level(log::Level::Debug).expect("Can't get the console"); // TODO if it's a prod build, change to INFO
 
     let document = window()
         .and_then(|win| win.document())
@@ -31,6 +33,9 @@ fn main() {
     let _ = append_new_div(&document, &doc_toolbar, "toolbar__spacer");
     let button_prev = append_new_button(&document, &doc_toolbar, Action::PrevPage);
     let button_next = append_new_button(&document, &doc_toolbar, Action::NextPage);
+
+    let app = GraphWorld::new();
+    root.set_inner_html(&app.render_to_svg().unwrap());
 }
 
 #[derive(Clone, Copy)]
@@ -80,6 +85,19 @@ enum File {
     // todo add other types
 }
 
+trait GraphSource {
+    fn concat(&self, text: &str) -> Source;
+}
+
+impl GraphSource for Source {
+    fn concat(&self, text: &str) -> Source {
+        let mut note = self.clone();
+
+        note.edit(Range { start: 0, end: 0 }, text);
+        note
+    }
+}
+
 struct Fonts {
     pub meta: LazyHash<FontBook>,
     pub data: Vec<Font>,
@@ -87,23 +105,48 @@ struct Fonts {
 
 pub struct GraphWorld {
     files: Mutex<HashMap<FileId, File>>,
-    root_note_id: FileId,
+    /// The file currently on the screen
+    current_buffer: GraphBuffer,
+    /// The file that gets implicitly imported in all other files (intended for theming)
+    global_context: FileId,
     fonts: Fonts,
     typst_std_lib: LazyHash<Library>,
+}
+
+#[derive(Debug)]
+pub struct GraphBuffer {
+    page: usize,
+    note_id: FileId,
+}
+
+trait FromPath {
+    fn from_path(path: &str) -> Self;
+}
+
+impl FromPath for FileId {
+    fn from_path(path: &str) -> Self {
+        Self::new(None, VirtualPath::new(path))
+    }
 }
 
 impl GraphWorld {
     pub fn new() -> Self {
         let fonts = Self::get_default_fonts();
-        let root_note_id = FileId::new(None, VirtualPath::new("/root.typ"));
+        let current_note = FileId::from_path("/README.typ");
         let files = Mutex::new(HashMap::from([(
-            root_note_id,
-            File::Typst(Source::new(root_note_id, "Hello world.".to_string())),
+            current_note,
+            File::Typst(Source::new(current_note, "Hello world.".to_string())),
         )]));
+
+        let current_buffer = GraphBuffer {
+            page: 0,
+            note_id: current_note,
+        };
 
         Self {
             files,
-            root_note_id,
+            current_buffer, // TODO restore from localstorage
+            global_context: FileId::from_path("/GLOBAL.typ"),
             fonts,
             typst_std_lib: LazyHash::new(Library::default()), // stdlib
         }
@@ -117,19 +160,49 @@ impl GraphWorld {
         };
     }
 
-    pub fn compile_to_svg(&self, page_idx: usize) -> Result<String, String> {
+    /// Renders a page to SVG
+    pub fn render_to_svg(&self) -> Result<String, String> {
+        info!("rendering");
         let Warned { output, warnings } = typst::compile::<PagedDocument>(&self);
         let document = match output {
             Ok(doc) => doc,
             Err(why) => return Err(format!("{:?}", why)),
         };
 
-        match document.pages.get(page_idx) {
+        match document.pages.get(self.current_buffer.page) {
             Some(page) => Ok(typst_svg::svg(page)),
-            None => match document.pages.last() {
-                Some(page) => Ok(typst_svg::svg(page)),
-                None => Err(format!("The file has no pages somehow")),
-            },
+            None => {
+                error!(
+                    "Invalid buffer {:?}: page ID out of range",
+                    &self.current_buffer
+                );
+                Err("Invalid buffer: page ID out of range".to_string())
+            }
+        }
+    }
+
+    pub fn list_files(&self) -> Vec<FileId> {
+        self.files
+            .lock()
+            .unwrap()
+            .keys()
+            .into_iter()
+            .map(|id| id.clone())
+            .collect()
+    }
+
+    pub fn open_file(&mut self, id: FileId) -> Result<(), FileError> {
+        let files = self.files.lock().map_err(|_| FileError::AccessDenied)?;
+
+        if files.contains_key(&id) {
+            self.current_buffer = GraphBuffer {
+                note_id: id,
+                page: 0,
+            };
+
+            Ok(())
+        } else {
+            Err(FileError::AccessDenied)
         }
     }
 
@@ -163,14 +236,23 @@ impl World for GraphWorld {
     }
 
     fn main(&self) -> FileId {
-        self.root_note_id
+        self.current_buffer.note_id
     }
 
     fn source(&self, id: FileId) -> FileResult<Source> {
         let files = self.files.lock().map_err(|_| FileError::AccessDenied)?;
 
+        let global_context = match files.get(&self.global_context) {
+            Some(file) => match file {
+                File::Typst(source) => format!("{}\n", source.text()),
+            },
+            None => String::new(),
+        };
+
+        info!("Reading {:?}", &id);
+
         match files.get(&id).ok_or(FileError::AccessDenied)? {
-            File::Typst(source) => Ok(source.clone()),
+            File::Typst(source) => Ok(source.concat(&global_context)),
         }
     }
 
