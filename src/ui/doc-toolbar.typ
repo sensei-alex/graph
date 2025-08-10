@@ -1,7 +1,7 @@
 #import "theme.typ": theme
 #import "toolbar.typ": button, toolbar
 
-#let page_format = "16x9"
+#let current_page = "1 / 16"
 
 #set page(
   width: 10cm,
@@ -11,7 +11,7 @@
 
 #toolbar(
   button(active: true)[<<<], // this is a mock of what can be set by rust
-  button[#page_format],
+  button[#current_page],
   button[>>>],
 )
 
