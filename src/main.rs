@@ -35,45 +35,10 @@ fn main() {
 }
 
 #[derive(Clone, Copy)]
-enum Icon {
-    QuestionMark,
-    Next,
-    Prev,
-}
-
-#[derive(Clone, Copy)]
 enum Action {
     NextPage,
     PrevPage,
     Help,
-}
-
-impl Icon {
-    fn to_svg(self) -> &'static str {
-        match self {
-            Self::QuestionMark => include_str!("../icons/circle-question-mark.svg"),
-            Self::Next => include_str!("../icons/chevron-right.svg"),
-            Self::Prev => include_str!("../icons/chevron-left.svg"),
-        }
-    }
-}
-
-impl Action {
-    fn to_icon(self) -> Icon {
-        match self {
-            Self::NextPage => Icon::Next,
-            Self::PrevPage => Icon::Prev,
-            Self::Help => Icon::QuestionMark,
-        }
-    }
-
-    fn to_hotkey(self) -> char {
-        match self {
-            Self::NextPage => 'n',
-            Self::PrevPage => 'p',
-            Self::Help => 'h',
-        }
-    }
 }
 
 #[derive(Debug)]
